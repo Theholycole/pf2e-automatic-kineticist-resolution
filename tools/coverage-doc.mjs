@@ -44,6 +44,7 @@ const FEATURES = [
     ["Safe Elements", "module", "Designate targeted creatures on Channel Elements' or a stance's card; the aura's damage triggers skip them."],
     ["Pacifying Infusion, Chain Infusion, Two-Element Infusion", "module", "Arms the next blast: nonlethal note, chain reminder after a hit, half-and-half damage split."],
     ["Weapon Infusion, Versatile Blasts, Improved Elemental Blast, Kinetic Pinnacle, Kinetic Durability, Kinetic Quickness, Voice of Elements, Elemental Apotheosis, Nourishing Gate, Aura Shaping", "PF2e", "Rule elements."],
+    ["Gate Attenuator (all grades)", "PF2e + module", "The +1/+2 item bonus to impulse attack rolls is PF2e's rule (the impulse statistic the module rolls with). The once-a-day Elemental Spell is the module's button on the item's card: the attuned element's spell at its rank, with the item's DC or the kineticist's impulse DC when the element matches, cast through the spell module."],
     ["Elemental Transformation", "module", "Elemental Form at a chosen rank up to ⌈level/2⌉ through the spell module."],
     ["Reflow Elements, Double Reflow, Rapid Reattunement, Omnikinesis", "GM", "Retraining between impulse feats: character building, not resolution."],
     ["Kineticist Dedication, Through the Gate, Expert Kinetic Control, Base Kinesis (archetype), Elemental Familiar, Elemental Overlap", "PF2e", "Granted features and proficiencies; their impulses resolve like the class's."],

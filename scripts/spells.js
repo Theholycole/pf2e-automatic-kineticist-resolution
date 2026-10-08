@@ -16,6 +16,33 @@ async function spellAt(uuid, actor, rank) {
     try { return own.loadVariant?.({ castRank: rank }) ?? own; } catch (_) { return own; }
 }
 
+/**
+ * Cast a spell at a rank with a DC through the spell module (its route from api.diagnose), or post its link when the module isn't active.
+ * Returns a log line.
+ */
+export async function castSpellAt(actor, { uuid, name, rank, dc, targets = [], note = "" }) {
+    const api = game.modules.get(SPELL_MODULE)?.active ? game.modules.get(SPELL_MODULE)?.api : null;
+    const line = `${name} at rank ${rank}, DC ${dc}${note ? ` (${note})` : ""}.`;
+    if (!api?.diagnose) {
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor }), content: `<p>${escapeHTML(line)} @UUID[${uuid}]{${escapeHTML(name)}}</p>` });
+        return `${line} (the spell module isn't active: resolve the spell by hand)`;
+    }
+    const spell = await spellAt(uuid, actor, rank);
+    if (!spell) return `${name} couldn't be found.`;
+    const diagnosis = await api.diagnose(spell).catch(() => ({ route: "none" }));
+    const options = { castRank: rank, dc, sourceActor: actor, targets, plan: diagnosis.plan };
+    try {
+        if (diagnosis.route === "save") { await api.saves.start(spell, options); return `${line} The spell module opened its save card.`; }
+        if (diagnosis.route === "effect") { await api.execute(spell, options); return `${line} The spell module applied it.`; }
+        if (diagnosis.route === "form") { await api.forms?.start?.(spell, options); return `${line} The spell module applied the form.`; }
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor }), content: `<p>${escapeHTML(line)} @UUID[${uuid}]{${escapeHTML(name)}}</p>` });
+        return `${line} The spell module has no automatic route for it (${diagnosis.route}): resolve it from the spell's card.`;
+    } catch (error) {
+        console.error(`${MODULE_ID} | ${name}`, error);
+        return `${line} The spell module couldn't resolve it: ${error.message}`;
+    }
+}
+
 /** Resolve the spell-equivalent: returns log lines for the impulse card. */
 export async function resolveSpellEquivalent(actor, plan, context, state) {
     const data = plan.resolution.spell;

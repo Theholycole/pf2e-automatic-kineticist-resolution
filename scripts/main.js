@@ -9,6 +9,7 @@ import * as triggers from "./triggers.js";
 import { placeCreationsOp, summonOp, renderFoodCard, eat } from "./creations.js";
 import { onAttackMessage, onInfusionMessage, renderCritJunctionCard, applySplit } from "./blast.js";
 import { readImpulse } from "../src/reader/impulse-reader.js";
+import { addItemButtons } from "./items.js";
 import { resolveSave, resolveAttack, resolveHealing } from "../src/core/resolve.js";
 
 Hooks.once("init", () => {
@@ -69,6 +70,7 @@ function addResolveButton(message, html) {
     let item = null;
     try { item = message.item ?? null; } catch (_) { item = null; }
     addSafeElementsButton(message, html, item);
+    addItemButtons(message, html, item);
     if (!item || !isImpulse(item)) return;
     const actor = item.actor ?? actorFromMessage(message);
     if (!actor || !(game.user.isGM || actor.isOwner)) return;
