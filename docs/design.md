@@ -156,3 +156,47 @@ Fixed during the live run:
 - A shift-click didn't skip PF2e's roll dialog (the logic was inverted).
 - The impulse junction's once-per-round limit stuck outside combat.
 - The spell-equivalent is now its own repeatable "Resolve the spell" button, so a wall can be drawn first and retried.
+
+## 8. Option: impulses count as Strikes and spells (user request 2026-10-08)
+
+The world setting **Impulses count as Strikes and spells** is off by default. When it's on, a 1-action impulse also counts as a Strike and a 2-action impulse also counts as a spell. The user chose all three parts of each, and PF2e's own Elemental Blast is included.
+
+**1-action impulses as Strikes:**
+- **Strike bonuses:** the impulse attack rolls with the `strike-attack-roll` domain and its damage with `strike-damage`, using PF2e's `Statistic.extend` and the inline-roll link's domains.
+- **Strike triggers:** the rolls carry `action:strike` and `strike`.
+- **Multiple attack penalty:** the module counts attacks per turn, from its cards and PF2e's blasts. A card's attack number starts from that count.
+
+**2-action impulses as spells:**
+- **Spell modifiers:** the DC takes `spell-dc` modifiers, the attack `spell-attack-roll`, and the damage `spell-damage`.
+- **Defences against spells:** saves and damage carry `item:type:spell` and `magical`.
+- **Restrictions:** a stupefied kineticist rolls the flat check (DC 5 + value). On a failure the impulse is lost.
+- **Interactions:** counterspell and spellshapes run in the spell module's casting runtime. A hook was requested from its session; until it exists, the card tells the GM to handle these by hand.
+
+**Elemental Blast:**
+- A rule rewriter registered with `pf2e-resolution-core` (`api.patches.rules.registerRewriter`) copies each Strike or spell modifier onto `elemental-blast-attack-roll` and `elemental-blast-damage`, limited to `action:cost:1` or `action:cost:2`. The module wraps nothing itself.
+- This needs the core to own the rules patch, which it does after the spell module's switch-over.
+- A stupefied 2-action blast gets the GM's flat check.
+
+## 9. Second live pass (pftest, 2026-10-08)
+
+All 11 new cases pass:
+
+| Case | What it checked |
+|---|---|
+| Hazardous terrain | a creature moving 2 squares into Scorching Column's area: the GM's card; 3 fire × 2 applied |
+| Start-of-turn area | Rain of Rust in combat: the metal creature's Fortitude save at its turn start; damage and persistent damage on a critical failure |
+| Fresh Produce | the food card; eating heals and gives PF2e's Effect and the "full" immunity |
+| Scrap Barricade | a Wall from two points, removed with its tracker |
+| Critical blast junction (air) | the GM's card on a critical blast; the 10-foot push |
+| Chain Infusion | the feat's card arms the next blast |
+| Fearsome Familiar | an elemental (level ≤ L−4) from PF2e's bestiaries as a token, removed with its tracker |
+| Rattle the Earth | Earthquake at rank 3 through the spell module |
+| Gate attenuator | PF2e's +1 on the impulse statistic; the Elemental Spell (Dehydrate, rank 1, DC 21) cast through the spell module |
+| Counts as Strikes and spells | Tidal Hands (2 actions) DC 23 with a +2 spell-DC Effect; Extract Element (1 action) damage +3 from a Strike-damage Effect |
+| Elemental Blast aliases (core rewriter) | 1 action: the Strike bonus only; 2 actions: the spell bonus only |
+
+Fixed during the pass:
+- In Foundry 14 an animated move's document still holds the old position in updateToken. The destination now comes from the changes, for hazardous terrain and entering the aura.
+- The GM-rolled saves on later cards no longer open PF2e's dialog.
+
+Pending: counterspell and spellshapes on impulses counting as spells. The spell module's session is building `api.castingRules.onSpellLike`, with the design agreed on 2026-10-08.

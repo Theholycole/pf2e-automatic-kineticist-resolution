@@ -10,6 +10,8 @@ import { placeCreationsOp, summonOp, renderFoodCard, eat } from "./creations.js"
 import { onAttackMessage, onInfusionMessage, renderCritJunctionCard, applySplit } from "./blast.js";
 import { readImpulse } from "../src/reader/impulse-reader.js";
 import { addItemButtons } from "./items.js";
+import { aliasRulesForBlasts } from "../src/core/impulse-as.js";
+import { countsAsEnabled } from "./card.js";
 import { resolveSave, resolveAttack, resolveHealing } from "../src/core/resolve.js";
 
 Hooks.once("init", () => {
@@ -22,6 +24,12 @@ Hooks.once("init", () => {
         name: "Stance aura triggers",
         hint: "Whisper the GM a card when a creature enters, starts or ends its turn in a kineticist's aura with a stance that does something then (Thermal Nimbus, Drifting Pollen…).",
         scope: "world", config: true, type: Boolean, default: true
+    });
+    game.settings.register(MODULE_ID, "impulsesAsStrikesAndSpells", {
+        name: "Impulses count as Strikes and spells",
+        hint: "A 1-action impulse also counts as a Strike (Strike modifiers and triggers apply, and it uses the multiple attack penalty); a 2-action impulse also counts as a spell (spell modifiers apply, spellcasting restrictions such as stupefied apply, and it can be counterspelled). Covers PF2e's own Elemental Blast through PF2e Resolution Core when it's active.",
+        scope: "world", config: true, type: Boolean, default: false,
+        onChange: () => { for (const actor of game.actors) if (isKineticist(actor)) actor.reset(); }
     });
     registerOp("placeCreations", placeCreationsOp);
     registerOp("summon", summonOp);
@@ -143,3 +151,18 @@ function addSafeElementsButton(message, html, item) {
         } catch (error) { notifyError("Safe Elements", error); }
     }));
 }
+
+// ---------------------------------------------------------------- impulses counting as Strikes and spells: PF2e's own Elemental Blast
+
+const isKineticist = actor => Boolean(actor?.items?.some?.(item => item.system?.slug === "elemental-blast" || item.system?.slug === "impulses"));
+
+/** Through the core's rule rewriter (never a wrap of our own): Strike and spell modifiers copied onto Elemental Blast's selectors, by action count. */
+function registerBlastAliases(api) {
+    api?.patches?.rules?.registerRewriter?.({
+        module: MODULE_ID, name: "impulses-as-strikes-and-spells",
+        rewrite: (item, rules) => (countsAsEnabled() && isKineticist(item?.actor) ? aliasRulesForBlasts(rules) : null)
+    });
+}
+const coreApi = globalThis.game?.modules?.get?.("pf2e-resolution-core")?.api;
+if (coreApi) registerBlastAliases(coreApi);
+else Hooks.once("pf2eResolutionCoreReady", registerBlastAliases);

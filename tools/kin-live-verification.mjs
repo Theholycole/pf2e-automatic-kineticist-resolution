@@ -36,7 +36,7 @@ export async function setup({ level = 5 } = {}) {
         source.folder = folder.id;
         yoon = await Actor.create(source);
     }
-    const extra = ["Tidal Hands", "Glacial Prison", "Magnetic Pinions", "Ocean's Balm", "Armor in Earth", "Tremor", "Witchwood Seed", "Sand Snatcher", "Fresh Produce", "Burning Demand", "Architect of Flame", "Storm Spiral", "Drifting Pollen", "Winter Sleet", "Command Elemental"];
+    const extra = ["Rain of Rust", "Scrap Barricade", "Fearsome Familiar", "Chain Infusion", "Rattle the Earth", "Counter Element", "Tidal Hands", "Glacial Prison", "Magnetic Pinions", "Ocean's Balm", "Armor in Earth", "Tremor", "Witchwood Seed", "Sand Snatcher", "Fresh Produce", "Burning Demand", "Architect of Flame", "Storm Spiral", "Drifting Pollen", "Winter Sleet", "Command Elemental"];
     const missing = [];
     for (const name of extra) if (!yoon.items.some(i => i.name === name)) { const feat = await featByName(name); if (feat) missing.push(feat); }
     if (missing.length) await yoon.createEmbeddedDocuments("Item", missing);
@@ -80,7 +80,8 @@ export async function aura(on = true) {
 /** Open a card for an impulse and return its message. */
 async function open(name, targets = state.targets) {
     const { openCard } = await card();
-    const item = state.yoon.items.find(i => i.name === name);
+    // (An impulse, not a passive feature of the same name: Extract Element is both a class feature and the action.)
+    const item = state.yoon.items.find(i => i.name === name && (i.system?.traits?.value ?? []).includes("impulse")) ?? state.yoon.items.find(i => i.name === name);
     if (!item) throw new Error(`Yoon has no ${name}`);
     const before = game.messages.size;
     await openCard({ item, actor: state.yoon, token: state.yoonToken, targets: targets.map(t => t.object ?? t) });
@@ -263,6 +264,169 @@ export const CASES = {
         return record("architectOfFlame", /Wall of Fire at rank 3, class DC 21/.test(log), { log });
     }
 };
+
+const coreItem = async (pack, name) => { const p = game.packs.get(pack); const entry = (await p.getIndex()).find(e => e.name === name); return entry ? (await p.getDocument(entry._id)).toObject() : null; };
+const MID = MODULE_ID;
+const lastWith = flag => game.messages.contents.findLast(m => m.flags?.[MID]?.[flag]);
+
+Object.assign(CASES, {
+    /** Hazardous terrain: a creature moving into Scorching Column's squares gets the GM's card; applying it deals the damage. */
+    async hazardMove() {
+        await resetTargets(); await aura(true);
+        const message = await open("Scorching Column", [state.targets[0]]);
+        await state.scene.createEmbeddedDocuments("Region", [{ name: "PFTEST KIN template 2", shapes: [{ type: "rectangle", x: 1200, y: 600, width: 300, height: 300, rotation: 0, hole: false }] }]);
+        await click(message, '[data-kin="use-region"]');
+        await setDegrees(message, ["success"]);
+        await click(message, '[data-kin="roll-damage"]');
+        await (await card()).requestOp("apply", { messageId: message.id });
+        await wait(1500);
+        await state.targets[1].update({ x: 1000, y: 700 }, { teleport: true, animate: false });
+        await wait(500);
+        const before = game.messages.size;
+        await state.targets[1].update({ x: 1300, y: 700 });
+        await wait(2500);
+        const later = game.messages.contents.slice(before).find(m => m.flags?.[MID]?.later);
+        const hp0 = hp(state.targets[1]);
+        if (later) await click(later, '[data-kin="later-apply"]');
+        await wait(1500);
+        return record("hazardMove", Boolean(later) && hp(state.targets[1]) < hp0, { card: later?.content?.replace(/<[^>]+>/g, ""), hp: [hp0, hp(state.targets[1])] });
+    },
+    /** A lingering area's start-of-turn save (Rain of Rust on a metal creature), in combat. */
+    async turnStartArea() {
+        await resetTargets(); await aura(true);
+        const message = await open("Rain of Rust", []);
+        await state.scene.createEmbeddedDocuments("Region", [{ name: "PFTEST KIN template 3", shapes: [{ type: "circle", x: 850, y: 1150, radiusX: 200, radiusY: 200, radius: 200, rotation: 0, hole: false }] }]);
+        await click(message, '[data-kin="use-region"]');
+        await (await card()).requestOp("apply", { messageId: message.id });
+        await wait(1500);
+        const combat = await Combat.create({ scene: state.scene.id, active: true });
+        await combat.createEmbeddedDocuments("Combatant", [{ tokenId: state.yoonToken.id, sceneId: state.scene.id, initiative: 20 }, { tokenId: state.targets[2].id, sceneId: state.scene.id, initiative: 10 }]);
+        await combat.startCombat(); await wait(800);
+        const before = game.messages.size;
+        await combat.nextTurn(); await wait(2500);
+        const later = game.messages.contents.slice(before).find(m => m.flags?.[MID]?.later);
+        const hp0 = hp(state.targets[2]);
+        if (later) await click(later, '[data-kin="later-apply"]');
+        await wait(2000);
+        await combat.delete();
+        const status = later ? game.messages.get(later.id).flags[MID].later.status : null;
+        return record("turnStartArea", Boolean(later) && /:/.test(status ?? ""), { status, hp: [hp0, hp(state.targets[2])] });
+    },
+    /** Fresh Produce: the food card; eating heals and gives PF2e's Effect. */
+    async freshProduce() {
+        await resetTargets();
+        await state.targets[0].actor.update({ "system.attributes.hp.value": 60 });
+        const message = await open("Fresh Produce", [state.targets[0]]);
+        const entry = cardState(message).plan.resolution.creations[0];
+        await (await card()).requestOp("placeCreations", { messageId: message.id, placements: [{ entry, kind: "food" }] });
+        await wait(1500);
+        const food = lastWith("food");
+        const { eat } = await import(`${BASE}/scripts/creations.js`);
+        await eat(food.id, state.targets[0].actor.uuid);
+        await wait(1500);
+        const actor = state.targets[0].actor;
+        return record("freshProduce", hp(state.targets[0]) > 60 && hasEffect(actor, /Fresh Produce|Full/), { hp: hp(state.targets[0]), items: actor.items.map(i => i.name) });
+    },
+    /** Scrap Barricade: a Wall from two points, removed with its tracker. */
+    async wallBarricade() {
+        const message = await open("Scrap Barricade", []);
+        const entry = cardState(message).plan.resolution.creations[0];
+        await (await card()).requestOp("placeCreations", { messageId: message.id, placements: [{ entry, kind: "wall", points: [{ x: 1500, y: 500 }, { x: 1500, y: 800 }] }] });
+        await wait(1500);
+        await (await card()).requestOp("apply", { messageId: message.id });
+        await wait(1500);
+        const wall = game.scenes.get(state.scene.id).walls.find(w => w.flags?.[MID]?.creation === "Scrap Barricade");
+        const tracker = state.yoon.itemTypes.effect.find(e => e.name === "Impulse: Scrap Barricade");
+        await tracker?.delete(); await wait(1500);
+        const gone = !game.scenes.get(state.scene.id).walls.some(w => w.flags?.[MID]?.creation === "Scrap Barricade");
+        return record("wallBarricade", Boolean(wall && tracker && gone), { wall: Boolean(wall), tracker: Boolean(tracker), gone });
+    },
+    /** Critical blast junction (air): the GM's card on a critical blast, the push applied. */
+    async critBlastJunction() {
+        await resetTargets();
+        const [junction] = await state.yoon.createEmbeddedDocuments("Item", [{ type: "effect", name: `${PREFIX} crit junction`, system: { rules: [{ key: "RollOption", option: "junction:air:critical" }], duration: { value: -1, unit: "unlimited", expiry: null, sustained: false } } }]);
+        await wait(500);
+        const { onAttackMessage } = await import(`${BASE}/scripts/blast.js`);
+        const target = state.targets[0];
+        await onAttackMessage({ actor: state.yoon, speaker: { actor: state.yoon.id }, flags: { pf2e: { context: { type: "attack-roll", options: ["action:elemental-blast", "item:trait:air", "action:cost:1"], outcome: "criticalSuccess", target: { actor: target.actor.uuid, token: target.uuid } } } } });
+        await wait(1500);
+        const crit = lastWith("critJunction");
+        const x0 = target.x;
+        if (crit) document.querySelector(`li.chat-message[data-message-id="${crit.id}"] .pf2e-kin-crit button`)?.click();
+        await wait(2000);
+        await junction.delete();
+        const moved = game.scenes.get(state.scene.id).tokens.get(target.id).x - x0;
+        return record("critBlastJunction", Boolean(crit) && moved > 0, { moved, status: crit ? game.messages.get(crit.id).flags[MID].critJunction.status : null });
+    },
+    /** Chain Infusion: posting the feat arms the next blast. */
+    async chainInfusion() {
+        await state.yoon.unsetFlag(MID, "nextBlast");
+        const feat = state.yoon.items.find(i => i.name === "Chain Infusion");
+        await feat.toMessage();
+        await wait(2000);
+        return record("chainInfusion", Boolean(state.yoon.flags?.[MID]?.nextBlast?.chain), { nextBlast: state.yoon.flags?.[MID]?.nextBlast });
+    },
+    /** Fearsome Familiar: an elemental summoned (level ≤ L−4) as a token, removed with the tracker. */
+    async summon() {
+        const message = await open("Fearsome Familiar", []);
+        const summon = cardState(message).plan.resolution.summon;
+        let uuid = null;
+        for (const pack of game.packs.filter(p => p.documentName === "Actor" && p.metadata.packageName === "pf2e" && /bestiary|monster-core/.test(p.collection))) {
+            const index = await pack.getIndex({ fields: ["system.traits.value", "system.details.level.value", "system.traits.rarity"] });
+            const entry = index.find(e => (e.system?.traits?.value ?? []).includes("elemental") && Number(e.system?.details?.level?.value) <= summon.maxLevel);
+            if (entry) { uuid = `Compendium.${pack.collection}.Actor.${entry._id}`; break; }
+        }
+        await (await card()).requestOp("summon", { messageId: message.id, uuid });
+        await wait(2000);
+        await (await card()).requestOp("apply", { messageId: message.id });
+        await wait(1500);
+        const token = game.scenes.get(state.scene.id).tokens.find(t => t.flags?.[MID]?.summoned);
+        const tracker = state.yoon.itemTypes.effect.find(e => e.name === "Impulse: Fearsome Familiar");
+        await tracker?.delete(); await wait(1500);
+        const gone = !game.scenes.get(state.scene.id).tokens.some(t => t.flags?.[MID]?.summoned);
+        return record("summon", Boolean(token && tracker && gone), { token: token?.name, maxLevel: summon.maxLevel, tracker: Boolean(tracker), gone });
+    },
+    /** Rattle the Earth: Earthquake through the spell module (a save spell). */
+    async rattleTheEarth() {
+        const message = await open("Rattle the Earth", [state.targets[0]]);
+        await click(message, '[data-kin="resolve-spell"]');
+        await wait(3000);
+        const log = cardState(message).spellLog ?? "";
+        return record("rattleTheEarth", /Earthquake at rank 3/.test(log) && !/couldn't be found/.test(log), { log });
+    },
+    /** Gate attenuator: its item bonus on impulse attacks (PF2e's rule) and its Elemental Spell through the spell module. */
+    async gateAttenuator() {
+        const source = await coreItem("pf2e.equipment-srd", "Gate Attenuator");
+        source.system.equipped = { carryType: "worn", invested: true, inSlot: true };
+        const [item] = await state.yoon.createEmbeddedDocuments("Item", [source]);
+        await wait(1000);
+        const impulse = state.yoon.getStatistic("impulse");
+        const bonus = impulse.check.modifiers.find(m => m.enabled && m.type === "item")?.modifier ?? 0;
+        const { castElementalSpell } = await import(`${BASE}/scripts/items.js`);
+        const result = await castElementalSpell(item, undefined, { element: "fire", force: true });
+        await wait(2500);
+        await item.delete();
+        return record("gateAttenuator", bonus === 1 && result?.stats?.dc >= 17 && /Dehydrate at rank 1/.test(result?.line ?? ""), { bonus, dc: result?.stats?.dc, usesImpulse: result?.stats?.usesImpulse, line: result?.line });
+    },
+    /** The option: a 2-action impulse counts as a spell (spell-DC modifiers apply), a 1-action one as a Strike (strike-damage modifiers apply). */
+    async countsAs() {
+        await resetTargets(); await aura(true);
+        await game.settings.set(MID, "impulsesAsStrikesAndSpells", true);
+        const [bonuses] = await state.yoon.createEmbeddedDocuments("Item", [{ type: "effect", name: `${PREFIX} bonuses`, system: { rules: [
+            { key: "FlatModifier", selector: "spell-dc", type: "status", value: 2, slug: "kin-test-spell-dc" },
+            { key: "FlatModifier", selector: "strike-damage", type: "status", value: 3, slug: "kin-test-strike-damage" }], duration: { value: -1, unit: "unlimited", expiry: null, sustained: false } } }]);
+        await wait(800);
+        const tidal = await open("Tidal Hands", [state.targets[0]]);
+        const extract = await open("Extract Element", [state.targets[0]]);
+        await click(extract, '[data-kin="roll-damage"]');
+        const s1 = cardState(tidal), s2 = cardState(extract);
+        const damageMessage = game.messages.contents.findLast(m => m.flags?.pf2e?.context?.type === "damage-roll" && m.speaker?.actor === state.yoon.id);
+        const strikeBonus = (damageMessage?.flags?.pf2e?.modifiers ?? []).some(m => m.slug === "kin-test-strike-damage") || /\+ ?3|3\]/.test(damageMessage?.rolls?.[0]?.formula ?? "");
+        await game.settings.set(MID, "impulsesAsStrikesAndSpells", false);
+        await bonuses.delete();
+        return record("countsAs", s1.countsAs === "spell" && s1.dc === 23 && s2.countsAs === "strike" && strikeBonus, { tidal: [s1.countsAs, s1.dc], extract: [s2.countsAs, damageMessage?.rolls?.[0]?.formula], strikeBonus });
+    }
+});
 
 export async function run(name) {
     try { return await CASES[name](); }

@@ -122,6 +122,16 @@ export async function onAttackMessage(message) {
     const actor = message.actor ?? (message.speaker?.actor ? game.actors.get(message.speaker.actor) : null);
     if (!actor) return;
     const elements = ELEMENTS.filter(element => (context.options ?? []).includes(`item:trait:${element}`) || (context.traits ?? []).includes(element));
+    // (Every blast attack adds to this turn's multiple attack penalty count the module's impulse cards read.)
+    const { countAttack, countsAsEnabled } = await import("./card.js");
+    await countAttack(actor, 1);
+    // (A 2-action blast counting as a spell: a stupefied kineticist's flat check, DC 5 + the value, decides whether the blast was lost.)
+    const stupefied = Number(actor.getCondition?.("stupefied")?.value ?? 0);
+    if (countsAsEnabled() && stupefied && (context.options ?? []).includes("action:cost:2")) {
+        const roll = await new Roll("1d20").evaluate();
+        await roll.toMessage({ speaker: ChatMessage.getSpeaker({ actor }), whisper: ChatMessage.getWhisperRecipients("GM").map(user => user.id),
+            flavor: `Elemental Blast (2 actions, counts as a spell): stupefied flat check DC ${5 + stupefied} — ${roll.total >= 5 + stupefied ? "it goes off" : "failed: the blast is lost (don't apply its damage)"}` });
+    }
     const outcome = degreeKey(context.outcome);
     const infusion = actor.flags?.[MODULE_ID]?.nextBlast ?? null;
     const lines = [];

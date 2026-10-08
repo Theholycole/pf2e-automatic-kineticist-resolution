@@ -112,7 +112,8 @@ export async function onTokenMove(tokenDocument, changes) {
     for (const holder of holders) {
         if (holder.token.id === tokenDocument.id) continue;
         const was = tokenDocument.flags?.[MODULE_ID]?.inAura?.[holder.token.id] ?? false;
-        const now = inKineticAura(holder.token, tokenDocument);
+        // (The destination from the changes: an animated move's document can still hold the old position.)
+        const now = inKineticAura(holder.token, { x: changes.x ?? tokenDocument.x, y: changes.y ?? tokenDocument.y, width: tokenDocument.width, height: tokenDocument.height, parent: tokenDocument.parent });
         if (was !== now) await tokenDocument.setFlag(MODULE_ID, `inAura.${holder.token.id}`, now).catch(() => null);
         if (!now || was) continue;
         for (const trigger of holder.triggers) if ((trigger.events ?? []).includes("enter")) await triggerCard(holder, trigger, tokenDocument, "enters the aura").catch(error => notifyError("An aura trigger", error));
@@ -182,7 +183,7 @@ async function runTrigger(message, { save, targets = null }) {
         if (save && trigger.save) {
             const statistic = token.actor.saves?.[trigger.save.statistic] ?? token.actor.getStatistic?.(trigger.save.statistic);
             const dc = (classDC(holder) ?? 10) + Number(trigger.save.adjustment ?? 0);
-            const roll = await statistic?.roll({ dc: { value: dc }, origin: holder, extraRollOptions: ["item:trait:impulse"], createMessage: true });
+            const roll = await statistic?.roll({ dc: { value: dc }, origin: holder, extraRollOptions: ["item:trait:impulse"], createMessage: true, skipDialog: true });
             degree = degreeKey(roll?.degreeOfSuccess) ?? "failure";
         }
         const list = resolveAuraTrigger(trigger, { id: token.id }, degree).map(change => change.op === "damage" && !change.components ? change : change.op === "damage" ? { ...change, components: undefined, roll: "shared" } : change);

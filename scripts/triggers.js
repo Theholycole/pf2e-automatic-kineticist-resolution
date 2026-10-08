@@ -29,15 +29,17 @@ export async function onTokenMoved(token, changes, options) {
     const effects = token.actor?.itemTypes?.effect?.filter(effect => effect.flags?.[MODULE_ID]?.areaBound) ?? [];
     if (!regions.length && !effects.length) return;
     const from = options?.[MODULE_ID]?.from ?? null;
+    // (Foundry 14 animates a move: when this hook runs the document can still hold the old position — the destination is in the changes.)
+    const to = { x: changes.x ?? token.x, y: changes.y ?? token.y };
     // (Conditions that last while it's in the area: gone once it's out.)
     for (const effect of effects) {
         const region = typeof effect.flags[MODULE_ID].areaBound === "string" ? fromUuidSync(effect.flags[MODULE_ID].areaBound) : null;
-        if (region && !inRegion(region, centreOf(token))) await effect.delete().catch(() => null);
+        if (region && !inRegion(region, centreOf(token, to.x, to.y))) await effect.delete().catch(() => null);
     }
     for (const region of regions) {
         const terrain = region.flags[MODULE_ID].terrain;
         if (!terrain.hazardous && !terrain.inArea) continue;
-        const squares = squaresEntered(token, region, from);
+        const squares = squaresEntered(token, region, from, to);
         if (!squares) continue;
         const formula = terrain.hazard ? componentsFormula(terrain.hazard) : null;
         if (terrain.hazardous && formula) await laterCard(region, token, `moved into ${squares} square${squares === 1 ? "" : "s"} of hazardous terrain`, { damage: terrain.hazard, times: squares });
@@ -46,14 +48,14 @@ export async function onTokenMoved(token, changes, options) {
 }
 
 /** The squares of a straight move from → to that lie in a Region and weren't in it at the start. */
-function squaresEntered(token, region, from) {
+function squaresEntered(token, region, from, to = { x: token.x, y: token.y }) {
     const size = token.parent.grid.size;
-    const start = from ?? { x: token.x, y: token.y };
-    const steps = Math.max(Math.abs(token.x - start.x), Math.abs(token.y - start.y)) / size;
-    if (!steps) return inRegion(region, centreOf(token)) && !from ? 1 : 0;
+    const start = from ?? to;
+    const steps = Math.max(Math.abs(to.x - start.x), Math.abs(to.y - start.y)) / size;
+    if (!steps) return inRegion(region, centreOf(token, to.x, to.y)) && !from ? 1 : 0;
     let count = 0;
     for (let i = 1; i <= Math.round(steps); i++) {
-        const x = start.x + (token.x - start.x) * i / steps, y = start.y + (token.y - start.y) * i / steps;
+        const x = start.x + (to.x - start.x) * i / steps, y = start.y + (to.y - start.y) * i / steps;
         if (inRegion(region, centreOf(token, x, y))) count++;
     }
     return count;
@@ -127,7 +129,7 @@ async function runLater(message) {
     if (!token?.actor) throw new Error("The creature is gone.");
     let degree = "failure";
     if (data.save) {
-        const roll = await (token.actor.saves?.[data.save.statistic] ?? token.actor.getStatistic(data.save.statistic))?.roll({ dc: { value: classDC(source) ?? 10 }, origin: source ?? undefined, extraRollOptions: ["item:trait:impulse", "area-effect"], createMessage: true });
+        const roll = await (token.actor.saves?.[data.save.statistic] ?? token.actor.getStatistic(data.save.statistic))?.roll({ dc: { value: classDC(source) ?? 10 }, origin: source ?? undefined, extraRollOptions: ["item:trait:impulse", "area-effect"], createMessage: true, skipDialog: true });
         degree = degreeKey(roll?.degreeOfSuccess) ?? "failure";
     }
     const multiplier = data.save?.basic ? { criticalSuccess: 0, success: 0.5, failure: 1, criticalFailure: 2 }[degree] : data.save ? (["failure", "criticalFailure"].includes(degree) ? 1 : 0) : 1;
@@ -152,7 +154,7 @@ async function followUpCard(token, effect) {
     const followUp = effect.flags[MODULE_ID].followUp;
     const source = effect.flags[MODULE_ID].sourceActor ? fromUuidSync(effect.flags[MODULE_ID].sourceActor) : null;
     if (followUp.recurringSave) {
-        const roll = await (token.actor.saves?.[followUp.statistic] ?? token.actor.getStatistic(followUp.statistic))?.roll({ dc: { value: followUp.dc ?? classDC(source) ?? 10 }, origin: source ?? undefined, extraRollOptions: ["item:trait:impulse"], createMessage: true });
+        const roll = await (token.actor.saves?.[followUp.statistic] ?? token.actor.getStatistic(followUp.statistic))?.roll({ dc: { value: followUp.dc ?? classDC(source) ?? 10 }, origin: source ?? undefined, extraRollOptions: ["item:trait:impulse"], createMessage: true, skipDialog: true });
         const degree = degreeKey(roll?.degreeOfSuccess);
         if (["success", "criticalSuccess"].includes(degree)) {
             const instance = effect.flags[MODULE_ID].instance;

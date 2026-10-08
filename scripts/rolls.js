@@ -1,6 +1,7 @@
 // Impulse damage and healing rolls through PF2e's own inline @Damage path, so the kineticist's modifiers apply (the fire impulse junction's die
 // step, Desert Wind, Consume Power, Ignite the Sun…). Falls back to a plain DamageRoll of the plan's formula at the kineticist's level.
 import { MODULE_ID, escapeHTML, DamageRollClass, componentsFormula } from "./utils.js";
+import { countsAsDomains } from "../src/core/impulse-as.js";
 
 /** Wait for the next PF2e damage-roll message from an actor (posted by PF2e's inline roll). */
 function nextDamageMessage(actor, timeout = 15000) {
@@ -17,7 +18,7 @@ function nextDamageMessage(actor, timeout = 15000) {
 }
 
 /** Roll the impulse's @Damage tag as PF2e does when its link is clicked. Returns the evaluated roll, or null when PF2e didn't post one. */
-async function rollThroughPF2e({ actor, item, raw }) {
+async function rollThroughPF2e({ actor, item, raw, domains = [], options = [] }) {
     const editor = game.pf2e?.TextEditor;
     if (!editor?.enrichHTML || !editor._onClickInlineRoll || !item?.uuid || !raw) return null;
     const html = await editor.enrichHTML(`@Damage[${raw}]`, { rollData: item.getRollData?.() ?? actor.getRollData(), relativeTo: item });
@@ -29,6 +30,9 @@ async function rollThroughPF2e({ actor, item, raw }) {
     try {
         const anchor = wrapper.querySelector("a.inline-roll[data-damage-roll], a[data-damage-roll], a.inline-roll");
         if (!anchor) return null;
+        // (Counting as a Strike or a spell: PF2e's inline roll reads extra domains and roll options from the link.)
+        if (domains.length) anchor.dataset.domains = [anchor.dataset.domains, ...domains].filter(Boolean).join(",");
+        if (options.length) anchor.dataset.rollOptions = [anchor.dataset.rollOptions, ...options].filter(Boolean).join(",");
         const waiting = nextDamageMessage(actor);
         // (Shift-click: PF2e's "skip the dialog" toggle, as with its own buttons.)
         await editor._onClickInlineRoll({ target: anchor, currentTarget: anchor, shiftKey: true, ctrlKey: false, altKey: false, metaKey: false, button: 0, preventDefault() {}, stopPropagation() {} });
@@ -43,12 +47,13 @@ async function rollThroughPF2e({ actor, item, raw }) {
  * The impulse's damage (or healing) roll. `components` come from the plan at the kineticist's level; `raw` (the @Damage body) lets PF2e build it.
  * Returns an evaluated DamageRoll.
  */
-export async function rollImpulseDamage({ actor, item, components, plan, label = "Damage", raw = null }) {
+export async function rollImpulseDamage({ actor, item, components, plan, label = "Damage", raw = null, countsAs = null }) {
+    const extra = countsAsDomains(countsAs);
     const body = raw ?? plan?.resolution?.sharedDamage?.raw ?? null;
     const sameComponents = plan?.resolution?.sharedDamage?.components === components || plan?.resolution?.healing?.components === components;
     const healingRaw = plan?.resolution?.healing?.components === components ? plan.resolution.healing.raw : null;
     try {
-        const native = await rollThroughPF2e({ actor, item, raw: raw ?? (sameComponents ? healingRaw ?? body : null) });
+        const native = await rollThroughPF2e({ actor, item, raw: raw ?? (sameComponents ? healingRaw ?? body : null), domains: extra.damage, options: extra.options });
         if (native) return native;
     } catch (error) {
         console.warn(`${MODULE_ID} | PF2e's inline damage couldn't be used; rolling the formula.`, error);

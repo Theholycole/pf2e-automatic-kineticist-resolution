@@ -140,7 +140,8 @@ export async function applyDamageChange(actor, change, context) {
         if (!roll) throw new Error("Roll the damage first.");
         damage = change.multiplier === 1 ? roll : typeof roll.alter === "function" ? roll.alter(change.multiplier, 0) : Math.floor(roll.total * change.multiplier);
     }
-    const rollOptions = new Set([...(context.plan?.resolution?.check ? ["area-damage"].filter(() => !!context.plan.targeting?.area) : []), ...(context.plan?.traits ?? []).map(trait => `item:trait:${trait}`), "item:trait:impulse"]);
+    const rollOptions = new Set([...(context.plan?.resolution?.check ? ["area-damage"].filter(() => !!context.plan.targeting?.area) : []), ...(context.plan?.traits ?? []).map(trait => `item:trait:${trait}`), "item:trait:impulse",
+        ...(context.countsAs === "spell" ? ["item:type:spell", "spell", "magical"] : context.countsAs === "strike" ? ["action:strike", "strike"] : [])]);
     return actor.applyDamage({ damage, token: token?.object ?? token ?? undefined, item: context.item ?? undefined, rollOptions, skipIWR: Boolean(change.skipIwr) });
 }
 

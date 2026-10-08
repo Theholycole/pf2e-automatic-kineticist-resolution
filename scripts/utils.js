@@ -92,8 +92,10 @@ export function tokensInRegion(region) {
 export function distanceBetween(a, b) {
     try {
         const ta = a?.object ?? a, tb = b?.object ?? b;
-        if (ta?.distanceTo && tb) return ta.distanceTo(tb);
-        return canvas.grid.measurePath([ta.center, tb.center]).distance;
+        // (A plain position — a move's destination — has no placeable: measure centre to centre on the grid.)
+        if (ta?.distanceTo && tb?.document) return ta.distanceTo(tb);
+        const centre = t => t.center ?? { x: t.x + Number(t.width ?? 1) * canvas.grid.size / 2, y: t.y + Number(t.height ?? 1) * canvas.grid.size / 2 };
+        return canvas.grid.measurePath([centre(ta), centre(tb)]).distance;
     } catch (_) { return null; }
 }
 

@@ -5,6 +5,7 @@ import { MODULE_ID, SOCKET, isActiveGM, escapeHTML, clone, randomID, notifyError
 import { readImpulse } from "../src/reader/impulse-reader.js";
 import { resolveSave, resolveAttack, resolveHealing, targetDecisions, saveAdjustment, impulseLifecycle, modePlan, counteracts, DEGREES } from "../src/core/resolve.js";
 import { impulseJunctionsFor, overflowEndsAura, roundKey } from "../src/core/kineticist.js";
+import { impulseCountsAs, countsAsDomains, nextAttackNumber } from "../src/core/impulse-as.js";
 import { applyChanges, createEffect, storedRoll } from "./apply.js";
 import { startTracker } from "./tracker.js";
 import { endKineticAura, applyStance, kineticAuraOf } from "./aura.js";
@@ -74,7 +75,8 @@ export async function openCard({ item, actor, token = null, message = null, targ
         sourceTokenUuid: token?.uuid ?? tokenOf(actor)?.uuid ?? null,
         impulseMessageId: message?.id ?? null,
         level: plan.level,
-        dc: classDC(actor),
+        countsAs: impulseCountsAs(plan.activation.time, countsAsEnabled()),
+        dc: null,
         plan,
         mode: null,
         areaChoice: plan.targeting.areaChoices ? 0 : null,
@@ -91,6 +93,12 @@ export async function openCard({ item, actor, token = null, message = null, targ
         user: game.user.id
     };
     if (plan.resolution.modes?.length && plan.resolution.modes.some(mode => mode.sharedDamage || mode.save)) state.mode = null;
+    // (Counting as a spell: the DC takes spell-DC modifiers too.)
+    state.dc = impulseDC(actor, state.countsAs) ?? classDC(actor);
+    // (Counting as a Strike or with an attack roll: this turn's multiple attack penalty.)
+    state.attackNumber = nextAttackNumber(mapCount(actor));
+    // (Counting as a spell: casting rules — a stupefied kineticist's flat check, DC 5 + the value.)
+    if (state.countsAs === "spell" && !repeat) state.disrupted = await stupefiedCheck(actor, item.name);
     return requestOp("create", { state });
 }
 
@@ -114,6 +122,49 @@ export function repeatPlan(plan, repeat) {
         if (repeat.enemiesOnly) out.targeting.actorConstraints.predicates.push({ kind: "enemy" });
     }
     return out;
+}
+
+/** The world option: 1-action impulses count as Strikes and 2-action impulses as spells. */
+export function countsAsEnabled() {
+    try { return Boolean(game.settings.get(MODULE_ID, "impulsesAsStrikesAndSpells")); } catch (_) { return false; }
+}
+
+/** The impulse statistic, with the extra domains of a Strike or a spell (PF2e's Statistic.extend: modifiers on those selectors apply). */
+export function impulseStatistic(actor, countsAs) {
+    const statistic = actor?.getStatistic?.("impulse");
+    if (!statistic || !countsAs) return statistic ?? null;
+    const domains = countsAsDomains(countsAs);
+    try { return statistic.extend({ check: { domains: domains.attack }, dc: { domains: domains.dc } }); } catch (_) { return statistic; }
+}
+
+function impulseDC(actor, countsAs) {
+    const value = Number(impulseStatistic(actor, countsAs)?.dc?.value);
+    return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/** Attacks the kineticist made this turn with the module's impulses (and PF2e's blasts), for the multiple attack penalty. */
+export function mapCount(actor) {
+    const record = actor?.flags?.[MODULE_ID]?.map;
+    return record && record.turn === turnKey(actor) ? Number(record.count ?? 0) : 0;
+}
+function turnKey(actor) {
+    const combat = game.combat;
+    return combat?.started && combat.combatant?.actor?.id === actor?.id ? `${combat.id}:${combat.round}:${combat.turn}` : null;
+}
+export async function countAttack(actor, howMany = 1) {
+    const key = turnKey(actor);
+    if (!key) return;
+    await actor.setFlag(MODULE_ID, "map", { turn: key, count: mapCount(actor) + howMany }).catch(() => null);
+}
+
+/** A stupefied spellcaster's flat check (DC 5 + the value): on a failure the spell — here the impulse — is lost. */
+async function stupefiedCheck(actor, name) {
+    const value = Number(actor?.getCondition?.("stupefied")?.value ?? actor?.itemTypes?.condition?.find(c => c.slug === "stupefied")?.value ?? 0);
+    if (!value) return null;
+    const roll = await new Roll("1d20").evaluate();
+    const dc = 5 + value;
+    await roll.toMessage({ speaker: ChatMessage.getSpeaker({ actor }), flavor: `${escapeHTML(name)}: stupefied flat check (DC ${dc}) — the impulse counts as a spell` });
+    return roll.total >= dc ? null : { dc, total: roll.total };
 }
 
 function isAlly(actor, entry) {
@@ -251,8 +302,8 @@ async function rollSave(message, state, target, event) {
     const roll = await statistic.roll({
         dc: { value: state.dc, label: `${state.itemName} DC` },
         origin: source, item: item ?? undefined,
-        extraRollOptions: [...(check.options ?? []), "item:trait:impulse", ...(state.plan.traits ?? []).map(trait => `item:trait:${trait}`), ...(state.plan.targeting.area ? ["area-effect"] : [])],
-        traits: [...new Set([...(state.plan.traits ?? []), ...(check.traits ?? [])])],
+        extraRollOptions: [...(check.options ?? []), "item:trait:impulse", ...(state.plan.traits ?? []).map(trait => `item:trait:${trait}`), ...(state.plan.targeting.area ? ["area-effect"] : []), ...countsAsDomains(state.countsAs).options],
+        traits: [...new Set([...(state.plan.traits ?? []), ...(check.traits ?? []), ...countsAsDomains(state.countsAs).traits])],
         modifiers,
         skipDialog: skipCheckDialog(event),
         createMessage: true
@@ -273,7 +324,7 @@ async function rollAttack(message, state, target, index, event) {
     const source = await fromUuid(state.sourceActorUuid);
     const actor = await fromUuid(target.actorUuid);
     const item = await fromUuid(state.itemUuid);
-    const statistic = source?.getStatistic?.("impulse");
+    const statistic = impulseStatistic(source, state.countsAs);
     if (!statistic || !actor) throw new Error("The kineticist's impulse attack or the target is unavailable.");
     const attack = state.plan.resolution.attack;
     // ("All three attacks count toward your multiple attack penalty, but it doesn't increase until after all the attacks.")
@@ -282,7 +333,7 @@ async function rollAttack(message, state, target, index, event) {
     if (attack.targetBonus && (state.answers[`metal:${target.id}`] ?? false)) modifiers.push(new game.pf2e.Modifier({ slug: "metal-target", label: state.itemName, modifier: attack.targetBonus.value, type: attack.targetBonus.type }));
     const roll = await statistic.roll({
         target: actor, dc: { slug: "ac" }, attackNumber, item: item ?? undefined, modifiers,
-        traits: state.plan.traits, extraRollOptions: ["item:trait:impulse", ...state.plan.traits.map(trait => `item:trait:${trait}`), attack.melee ? "melee" : "ranged"],
+        traits: [...new Set([...state.plan.traits, ...countsAsDomains(state.countsAs).traits])], extraRollOptions: ["item:trait:impulse", ...state.plan.traits.map(trait => `item:trait:${trait}`), attack.melee ? "melee" : "ranged", `action:cost:${state.plan.activation.time}`, ...countsAsDomains(state.countsAs).options],
         label: `${state.itemName}: impulse attack`, damaging: true,
         skipDialog: skipCheckDialog(event)
     });
@@ -298,7 +349,7 @@ async function rollDamage(message, state, kind = "damage") {
     const components = kind === "healing" ? state.healingVariant ? state.plan.resolution.healing.variants.find(v => v.when === state.healingVariant)?.components : state.plan.resolution.healing?.components
         : mode?.sharedDamage?.components ?? state.plan.resolution.sharedDamage?.components;
     if (!components?.length) throw new Error("This impulse has no damage to roll.");
-    const roll = await rollImpulseDamage({ actor: source, item, components, plan: state.plan, label: kind === "healing" ? "Healing" : "Damage" });
+    const roll = await rollImpulseDamage({ actor: source, item, components, plan: state.plan, label: kind === "healing" ? "Healing" : "Damage", countsAs: kind === "healing" ? null : state.countsAs });
     if (!roll) return;
     const patch = kind === "healing" ? { healing: { json: JSON.stringify(roll.toJSON()), total: roll.total } } : { damage: { json: JSON.stringify(roll.toJSON()), total: roll.total, formula: roll.formula } };
     await requestOp("update", { messageId: message.id, patch });
@@ -319,6 +370,7 @@ async function documentsFor(state) {
 async function applyCard(message, userId) {
     const state = stateOf(message);
     if (!state || state.status !== "open") return { status: "locked" };
+    if (state.disrupted) return { status: "disrupted" };
     const sourceActor = await fromUuid(state.sourceActorUuid);
     const sourceToken = state.sourceTokenUuid ? await fromUuid(state.sourceTokenUuid).catch(() => null) : null;
     const item = await fromUuid(state.itemUuid).catch(() => null);
@@ -327,7 +379,7 @@ async function applyCard(message, userId) {
     const targets = await documentsFor(state);
     const centredOnArea = plan.targeting.area && ["burst", "cylinder"].includes(plan.targeting.area.type) && state.areaCenter?.x != null;
     const context = { sourceActor, sourceToken, item, plan, instanceId, damageJSON: state.damage?.json ?? null, healingTotal: state.healing?.total ?? null, dc: state.dc, targets, regionUuid: state.regionUuid ?? null,
-        areaCenter: centredOnArea ? state.areaCenter : null, answers: state.answers };
+        areaCenter: centredOnArea ? state.areaCenter : null, answers: state.answers, countsAs: state.countsAs };
     const log = [];
     const r = plan.resolution;
     // The family's changes.
@@ -369,6 +421,9 @@ async function applyCard(message, userId) {
     if (lifecycle.tracked) log.push(...await startTracker(sourceActor, plan, context, state));
     // Overflow: the kinetic aura deactivates.
     if (state.overflow?.pending) { await endKineticAura(sourceActor, `${plan.source.name} (overflow)`); log.push("Overflow: the kinetic aura deactivates."); }
+    // (The multiple attack penalty: each impulse attack roll, and a 1-action impulse counting as a Strike, adds to this turn's count.)
+    const attacks = state.targets.filter(t => t.degree && (r.attack || r.blast?.elements)).length;
+    if (attacks || state.countsAs === "strike") await countAttack(sourceActor, Math.max(attacks, state.countsAs === "strike" ? 1 : 0));
     state.status = "applied";
     state.log = [...(state.log ?? []), ...log];
     for (const target of state.targets) if (!target.excluded) target.applied = true;
@@ -413,6 +468,8 @@ function cardHTML(message, state) {
     const locked = state.status !== "open";
     const parts = [];
     parts.push(`<p class="pf2e-kin-meta">Level ${plan.level} · class DC ${escapeHTML(state.dc ?? "?")}${plan.kineticist.overflow ? " · <strong>overflow</strong>" : ""}${plan.automation.level === "guided" ? " · <em>guided</em>" : ""}</p>`);
+    if (state.countsAs) parts.push(`<p class="pf2e-kin-counts">Counts as ${state.countsAs === "strike" ? "a Strike (Strike modifiers and triggers apply; it uses this turn's multiple attack penalty" : "a spell (spell modifiers apply; it can be counterspelled and spellshaped, and spellcasting restrictions apply"}) as well as an impulse.${state.attackNumber > 1 ? ` This turn's attack number: ${state.attackNumber}.` : ""}</p>`);
+    if (state.disrupted) parts.push(`<p class="pf2e-kin-overflow">Stupefied: the flat check failed (${state.disrupted.total} vs DC ${state.disrupted.dc}). The impulse is lost.</p>`);
     if (state.rage) parts.push(`<p class="pf2e-kin-rage">Elemental Instinct: this impulse gains the rage trait while you rage (and so does Sustaining it).</p>`);
     if (plan.targeting.area) parts.push(`<p>Area: ${areaText(plan, state)}</p>`);
     if (plan.targeting.areaChoices?.length > 1 && !locked) parts.push(`<p>${plan.targeting.areaChoices.map((area, index) => `<button type="button" data-kin="area-choice" data-index="${index}" ${state.areaChoice === index ? "class=\"active\"" : ""}>${escapeHTML(area.label ?? `${area.value}-foot ${area.type}`)}</button>`).join("")}</p>`);

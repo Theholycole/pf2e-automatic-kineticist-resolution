@@ -27,14 +27,15 @@ export function addItemButtons(message, html, item) {
     });
 }
 
-async function castElementalSpell(item, activation) {
+/** Cast it (the dialogs ask for the element and confirm a second use; `element` presets the first, `force` skips the second, for scripted runs). */
+export async function castElementalSpell(item, activation = readElementalSpellActivation(item), { element: preset = null, force = false } = {}) {
     const actor = item.actor;
     const flags = item.flags?.[MODULE_ID] ?? {};
-    if (flags.elementalSpellDay === today()) {
+    if (flags.elementalSpellDay === today() && !force) {
         const again = await foundry.applications.api.DialogV2.confirm({ window: { title: item.name }, content: `<p>${escapeHTML(activation.label)} was already used today (${escapeHTML(activation.frequency)}). Use it anyway?</p>` });
         if (!again) return;
     }
-    const element = await foundry.applications.api.DialogV2.wait({ window: { title: `${item.name}: attuned element` }, content: "<p>The element the attenuator is attuned to:</p>",
+    const element = preset ?? await foundry.applications.api.DialogV2.wait({ window: { title: `${item.name}: attuned element` }, content: "<p>The element the attenuator is attuned to:</p>",
         buttons: ELEMENTS.map(entry => ({ action: entry, label: `${entry}: ${activation.spells[entry].name}`, default: entry === flags.attunedElement })), rejectClose: false, close: () => null });
     if (!element) return;
     const kineticElements = (actor.flags?.system?.kineticist?.elements ?? []).map(entry => entry?.value ?? entry);
@@ -45,4 +46,5 @@ async function castElementalSpell(item, activation) {
     const note = `spell attack +${stats.attack}${stats.usesImpulse.dc || stats.usesImpulse.attack ? ", the kineticist's impulse statistics" : ", the item's statistics"}; it gains the ${element} trait`;
     const line = await castSpellAt(actor, { uuid: spell.uuid, name: spell.name, rank: activation.rank, dc: stats.dc, targets: [...game.user.targets], note });
     await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor }), content: `<p><strong>${escapeHTML(item.name)}</strong> — ${escapeHTML(activation.label)}: ${escapeHTML(line)}</p>` });
+    return { element, stats, line };
 }
