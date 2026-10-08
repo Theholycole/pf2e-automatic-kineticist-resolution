@@ -1,0 +1,41 @@
+{
+  "id": "pf2e-automatic-kineticist-resolution",
+  "title": "PF2e Automatic Kineticist Resolution",
+  "description": "Confirmation-first automation of the PF2e Kineticist: impulses read from their text (saves, impulse attacks, healing, stances, areas, creations), the kinetic aura, overflow and gate junctions.",
+  "version": "0.1.0",
+  "compatibility": {
+    "minimum": "14",
+    "verified": "14"
+  },
+  "authors": [
+    {
+      "name": "TheHolyCole"
+    }
+  ],
+  "relationships": {
+    "systems": [
+      {
+        "id": "pf2e",
+        "type": "system",
+        "compatibility": {
+          "minimum": "8.5.0",
+          "verified": "8.5.0"
+        }
+      }
+    ],
+    "recommends": [
+      {
+        "id": "pf2e-automatic-resolution",
+        "type": "module",
+        "reason": "Impulses that have the effect of a spell (Wall of Fire, Earthquake, Vapor Form…) are resolved by the spell module when it's active."
+      }
+    ]
+  },
+  "esmodules": [
+    "scripts/main.js"
+  ],
+  "styles": [
+    "styles/kineticist.css"
+  ],
+  "socket": true
+}

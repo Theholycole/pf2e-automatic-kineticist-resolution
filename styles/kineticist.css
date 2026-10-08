@@ -1,0 +1,40 @@
+/* PF2e Automatic Kineticist Resolution: chat cards. Colours follow the chat log's own variables so both light and dark themes read. */
+.pf2e-kin-card,
+.pf2e-kin-tracker,
+.pf2e-kin-trigger,
+.pf2e-kin-later,
+.pf2e-kin-followup,
+.pf2e-kin-crit,
+.pf2e-kin-food,
+.pf2e-kin-end {
+    margin-top: 0.4em;
+    font-size: var(--font-size-12, 12px);
+}
+.pf2e-kin-card p { margin: 0.25em 0; }
+.pf2e-kin-card .pf2e-kin-meta { opacity: 0.85; }
+.pf2e-kin-card button,
+.pf2e-kin-tracker button,
+.pf2e-kin-trigger button,
+.pf2e-kin-later button,
+.pf2e-kin-followup button,
+.pf2e-kin-crit button,
+.pf2e-kin-food button,
+.pf2e-kin-end button {
+    width: auto;
+    display: inline-block;
+    margin: 0.1em 0.15em;
+    padding: 0 0.5em;
+    line-height: 1.8;
+}
+.pf2e-kin-card button.active { outline: 2px solid var(--color-border-highlight, #ff6400); }
+.pf2e-kin-targets ul { list-style: none; margin: 0.2em 0; padding: 0; }
+.pf2e-kin-targets li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3em; padding: 0.15em 0; border-bottom: 1px solid var(--color-border-light-2, #8884); }
+.pf2e-kin-targets li img { border: none; flex: 0 0 24px; }
+.pf2e-kin-targets li.excluded { opacity: 0.5; text-decoration: line-through; }
+.pf2e-kin-targets select { width: auto; height: 1.8em; }
+.pf2e-kin-notes { margin: 0.3em 0; padding-left: 1.2em; }
+.pf2e-kin-notes li.gm { font-style: italic; }
+.pf2e-kin-overflow { font-weight: bold; }
+.pf2e-kin-actions { margin-top: 0.4em; display: flex; flex-wrap: wrap; gap: 0.3em; }
+.pf2e-kin-status { font-style: italic; }
+.pf2e-kin-resolve { margin-top: 0.3em; }

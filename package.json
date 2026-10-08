@@ -1,0 +1,10 @@
+{
+  "name": "pf2e-automatic-kineticist-resolution",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "fixtures": "node tools/export-fixtures.mjs"
+  }
+}
