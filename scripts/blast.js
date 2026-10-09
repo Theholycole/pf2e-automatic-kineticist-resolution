@@ -127,6 +127,13 @@ export async function onAttackMessage(message) {
     await countAttack(actor, 1);
     // (A 2-action blast counting as a spell: a stupefied kineticist's flat check, DC 5 + the value, decides whether the blast was lost.)
     const stupefied = Number(actor.getCondition?.("stupefied")?.value ?? 0);
+    // (A 2-action blast counting as a spell: the spell module's casting rules on its attack message — counterspell, conditions, spellshapes.)
+    if (countsAsEnabled() && (context.options ?? []).includes("action:cost:2")) {
+        const { blastAsSpell, blastShapingCard } = await import("./spell-like.js");
+        const summary = await blastAsSpell(message, actor, { element: elements[0] ?? null, damageType: ["acid", "bludgeoning", "cold", "electricity", "fire", "piercing", "poison", "slashing", "sonic", "vitality"].find(type => (context.options ?? []).includes(`item:damage:type:${type}`) || (context.traits ?? []).includes(type)) ?? null,
+            dc: classDC(actor), rank: Math.ceil(Number(actor.level ?? 1) / 2), level: actor.level, targetTokenUuid: context.target?.token ?? null }).catch(error => { console.warn(`${MODULE_ID} | blast as a spell`, error); return null; });
+        await blastShapingCard(actor, summary);
+    }
     if (countsAsEnabled() && stupefied && (context.options ?? []).includes("action:cost:2")) {
         const roll = await new Roll("1d20").evaluate();
         await roll.toMessage({ speaker: ChatMessage.getSpeaker({ actor }), whisper: ChatMessage.getWhisperRecipients("GM").map(user => user.id),

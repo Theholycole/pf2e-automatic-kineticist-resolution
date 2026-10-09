@@ -36,7 +36,7 @@ export async function setup({ level = 5 } = {}) {
         source.folder = folder.id;
         yoon = await Actor.create(source);
     }
-    const extra = ["Rain of Rust", "Scrap Barricade", "Fearsome Familiar", "Chain Infusion", "Rattle the Earth", "Counter Element", "Tidal Hands", "Glacial Prison", "Magnetic Pinions", "Ocean's Balm", "Armor in Earth", "Tremor", "Witchwood Seed", "Sand Snatcher", "Fresh Produce", "Burning Demand", "Architect of Flame", "Storm Spiral", "Drifting Pollen", "Winter Sleet", "Command Elemental"];
+    const extra = ["Torrent in the Blood", "Reach Spell", "Rain of Rust", "Scrap Barricade", "Fearsome Familiar", "Chain Infusion", "Rattle the Earth", "Counter Element", "Tidal Hands", "Glacial Prison", "Magnetic Pinions", "Ocean's Balm", "Armor in Earth", "Tremor", "Witchwood Seed", "Sand Snatcher", "Fresh Produce", "Burning Demand", "Architect of Flame", "Storm Spiral", "Drifting Pollen", "Winter Sleet", "Command Elemental"];
     const missing = [];
     for (const name of extra) if (!yoon.items.some(i => i.name === name)) { const feat = await featByName(name); if (feat) missing.push(feat); }
     if (missing.length) await yoon.createEmbeddedDocuments("Item", missing);
@@ -425,6 +425,33 @@ Object.assign(CASES, {
         await game.settings.set(MID, "impulsesAsStrikesAndSpells", false);
         await bonuses.delete();
         return record("countsAs", s1.countsAs === "spell" && s1.dc === 23 && s2.countsAs === "strike" && strikeBonus, { tidal: [s1.countsAs, s1.dc], extract: [s2.countsAs, damageMessage?.rolls?.[0]?.formula], strikeBonus });
+    }
+});
+
+Object.assign(CASES, {
+    /** Counting as a spell through the spell module: an armed Reach Spell shapes a 2-action impulse; restrained, a manipulate impulse is lost. */
+    async spellLike() {
+        await resetTargets(); await aura(true);
+        await game.settings.set(MID, "impulsesAsStrikesAndSpells", true);
+        const reach = state.yoon.items.find(i => i.name === "Reach Spell");
+        await reach.toMessage(); await wait(1500);
+        const armed = state.yoon.itemTypes.effect.some(e => e.flags?.["pf2e-automatic-resolution"]?.pendingSpellshape);
+        const tidal = await open("Tidal Hands", [state.targets[0]]);
+        await wait(2500);
+        const s1 = cardState(tidal);
+        const shaping = game.messages.get(tidal.id).getFlag("pf2e-automatic-resolution", "shaping");
+        const shownShape = /Spellshapes: Reach Spell/.test(document.querySelector(`li.chat-message[data-message-id="${tidal.id}"] .pf2e-kin-card`)?.textContent ?? "");
+        await state.yoon.increaseCondition("restrained"); await wait(500);
+        const torrent = await open("Torrent in the Blood", [state.targets[0]]);
+        await wait(2500);
+        const lost = game.messages.get(torrent.id).getFlag("pf2e-automatic-resolution", "spellLost");
+        const shownLost = /The impulse is lost/.test(document.querySelector(`li.chat-message[data-message-id="${torrent.id}"] .pf2e-kin-card`)?.textContent ?? "");
+        await (await card()).requestOp("apply", { messageId: torrent.id }); await wait(1000);
+        const s3 = cardState(torrent);
+        await state.yoon.decreaseCondition("restrained", { forceRemove: true }).catch(() => null);
+        await game.settings.set(MID, "impulsesAsStrikesAndSpells", false);
+        return record("spellLike", armed && Boolean(shaping) && shownShape && Boolean(lost) && shownLost && s3.status !== "applied" && Boolean(s3.disrupted),
+            { armed, shapes: (shaping?.shapes ?? []).map(x => x.name), shownShape, lost, shownLost, statusAfterApply: s3.status, disrupted: s3.disrupted });
     }
 });
 

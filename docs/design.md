@@ -199,4 +199,12 @@ Fixed during the pass:
 - In Foundry 14 an animated move's document still holds the old position in updateToken. The destination now comes from the changes, for hazardous terrain and entering the aura.
 - The GM-rolled saves on later cards no longer open PF2e's dialog.
 
-Pending: counterspell and spellshapes on impulses counting as spells. The spell module's session is building `api.castingRules.onSpellLike`, with the design agreed on 2026-10-08.
+Counterspell and spellshapes on impulses counting as spells: done through the spell module's `api.castingRules.onSpellLike`.
+
+- **What it covers:**
+  - counterspell offers
+  - the casting conditions (castConditions: true; Stupefied stays this module's)
+  - spellshapes. Their extra, flat and persistent damage and the type swap go into the impulse's own damage roll. Shadow Signet's defence switch goes into the impulse attack. Ignore-resistance, reroll-ones and on-crit riders are GM notes.
+- **How the card reads it:** the card reads the spell module's flags on the message live, rather than keeping a copy: a copy written right after the hook returned was overwritten.
+- **Live check 2026-10-09:** an armed Reach Spell shaped Tidal Hands. A restrained kineticist's Torrent in the Blood (manipulate) was lost, and Apply refused it.
+- **Elemental Blast:** a 2-action blast's attack message goes through the same hook. PF2e rolls the blast's damage, so its spellshape riders are listed on a GM card.

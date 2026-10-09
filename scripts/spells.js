@@ -20,7 +20,7 @@ async function spellAt(uuid, actor, rank) {
  * Cast a spell at a rank with a DC through the spell module (its route from api.diagnose), or post its link when the module isn't active.
  * Returns a log line.
  */
-export async function castSpellAt(actor, { uuid, name, rank, dc, targets = [], note = "" }) {
+export async function castSpellAt(actor, { uuid, name, rank, dc, targets = [], note = "", shapeMessageId = null }) {
     const api = game.modules.get(SPELL_MODULE)?.active ? game.modules.get(SPELL_MODULE)?.api : null;
     const line = `${name} at rank ${rank}, DC ${dc}${note ? ` (${note})` : ""}.`;
     if (!api?.diagnose) {
@@ -30,7 +30,7 @@ export async function castSpellAt(actor, { uuid, name, rank, dc, targets = [], n
     const spell = await spellAt(uuid, actor, rank);
     if (!spell) return `${name} couldn't be found.`;
     const diagnosis = await api.diagnose(spell).catch(() => ({ route: "none" }));
-    const options = { castRank: rank, dc, sourceActor: actor, targets, plan: diagnosis.plan };
+    const options = { castRank: rank, dc, sourceActor: actor, targets, plan: diagnosis.plan, ...(shapeMessageId ? { shapeMessageId } : {}) };
     try {
         if (diagnosis.route === "save") { await api.saves.start(spell, options); return `${line} The spell module opened its save card.`; }
         if (diagnosis.route === "effect") { await api.execute(spell, options); return `${line} The spell module applied it.`; }
@@ -58,7 +58,7 @@ export async function resolveSpellEquivalent(actor, plan, context, state) {
     const spell = await spellAt(data.uuid, actor, rank);
     if (!spell) return [`${data.name} couldn't be found.`];
     const diagnosis = await api.diagnose(spell).catch(error => ({ route: "none", error }));
-    const options = { castRank: rank, dc: state.dc, sourceActor: actor, targets, plan: diagnosis.plan };
+    const options = { castRank: rank, dc: state.dc, sourceActor: actor, targets, plan: diagnosis.plan, ...(context.shapeMessageId ? { shapeMessageId: context.shapeMessageId } : {}) };
     try {
         switch (diagnosis.route) {
             case "save": await api.saves.start(spell, options); return [`${note} The spell module opened its save card.`];

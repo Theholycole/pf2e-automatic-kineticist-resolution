@@ -33,3 +33,11 @@ test("Elemental Blast: Strike and spell modifiers copied onto its selectors by a
 test("the multiple attack penalty's attack number", () => {
     assert.deepEqual([0, 1, 2, 5].map(nextAttackNumber), [1, 2, 3, 3]);
 });
+
+test("spellshape riders on an impulse's own damage: the type swap and extra components in PF2e's @Damage body", async () => {
+    const { shapedRaw } = await import("../scripts/spell-like.js");
+    const original = [{ formula: "3d6", type: "fire", category: null }];
+    const shaped = { components: [{ formula: "3d6", type: "cold", category: null }, { formula: "2", type: "cold", category: null, from: "Elemental Shift" }, { formula: "1d4", type: "fire", category: "persistent", from: "Burning Spell" }] };
+    assert.equal(shapedRaw("(floor((@actor.level -1)/2)+1)d6[fire]|options:area-damage", shaped, original), "(floor((@actor.level -1)/2)+1)d6[cold],2[cold],1d4[persistent,fire]|options:area-damage");
+    assert.equal(shapedRaw(null, shaped, original), null);
+});

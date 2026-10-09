@@ -14,6 +14,7 @@ import { placeCreations } from "./creations.js";
 import { resolveSpellEquivalent } from "./spells.js";
 import { applyArmor } from "./armor.js";
 import { blastFamily, renderBlast, blastOps, matterAttack } from "./blast.js";
+import { castAsSpell, spellLost, shapedComponents, shapedRaw, attackDefense, spellLikeView } from "./spell-like.js";
 
 const DEGREE_LABEL = { criticalSuccess: "Critical Success", success: "Success", failure: "Failure", criticalFailure: "Critical Failure" };
 const ATTACK_LABEL = { criticalSuccess: "Critical Hit", success: "Hit", failure: "Miss", criticalFailure: "Critical Miss" };
@@ -215,6 +216,11 @@ const OPS = {
             content: `<div class="pf2e-kin-card-title"><strong>${escapeHTML(state.itemName)}</strong> — impulse resolution</div>`,
             flags: { [MODULE_ID]: { card: state } }
         });
+        // (Counting as a spell: the spell module's casting rules — counterspell offers, casting conditions, spellshapes — on this card.)
+        if (message && state.countsAs === "spell" && !state.disrupted && !state.repeat) {
+            // (Its results stay on the message in the spell module's flags; the card reads them live.)
+            try { await castAsSpell(message, state, actor); } catch (error) { console.warn(`${MODULE_ID} | the spell module's casting rules`, error); }
+        }
         return { status: "created", messageId: message?.id };
     },
     async update({ messageId, patch }) {
@@ -257,7 +263,7 @@ const OPS = {
         const actor = await fromUuid(state.sourceActorUuid);
         const item = await fromUuid(state.itemUuid).catch(() => null);
         const targets = await documentsFor(state);
-        const log = await resolveSpellEquivalent(actor, state.plan, { sourceActor: actor, item, plan: state.plan, instanceId: state.id, targets }, state);
+        const log = await resolveSpellEquivalent(actor, state.plan, { sourceActor: actor, item, plan: state.plan, instanceId: state.id, targets, shapeMessageId: spellLikeView(message) ? message.id : null }, state);
         await message.update({ [`flags.${MODULE_ID}.card.spellLog`]: log.join(" "), [`flags.${MODULE_ID}.card.spellResolved`]: !/couldn't|by hand|no automatic/.test(log.join(" ")) });
         return { status: "spell", log };
     },
@@ -331,8 +337,11 @@ async function rollAttack(message, state, target, index, event) {
     const attackNumber = attack.mapAfterAll ? Number(state.attackNumber ?? 1) : Math.min(3, Number(state.attackNumber ?? 1) + index);
     const modifiers = [];
     if (attack.targetBonus && (state.answers[`metal:${target.id}`] ?? false)) modifiers.push(new game.pf2e.Modifier({ slug: "metal-target", label: state.itemName, modifier: attack.targetBonus.value, type: attack.targetBonus.type }));
+    // (A spellshape's defence switch — Shadow Signet: against Fortitude or Reflex DC instead of AC; the better-for-the-kineticist one, i.e. the lower DC.)
+    const defenses = spellLikeView(message) ? attackDefense(message.id) : null;
+    const defense = defenses?.length ? defenses.reduce((best, save) => (Number(actor.saves?.[save]?.dc?.value ?? 99) < Number(actor.saves?.[best]?.dc?.value ?? 99) ? save : best)) : "ac";
     const roll = await statistic.roll({
-        target: actor, dc: { slug: "ac" }, attackNumber, item: item ?? undefined, modifiers,
+        target: actor, dc: { slug: defense }, attackNumber, item: item ?? undefined, modifiers,
         traits: [...new Set([...state.plan.traits, ...countsAsDomains(state.countsAs).traits])], extraRollOptions: ["item:trait:impulse", ...state.plan.traits.map(trait => `item:trait:${trait}`), attack.melee ? "melee" : "ranged", `action:cost:${state.plan.activation.time}`, ...countsAsDomains(state.countsAs).options],
         label: `${state.itemName}: impulse attack`, damaging: true,
         skipDialog: skipCheckDialog(event)
@@ -349,7 +358,12 @@ async function rollDamage(message, state, kind = "damage") {
     const components = kind === "healing" ? state.healingVariant ? state.plan.resolution.healing.variants.find(v => v.when === state.healingVariant)?.components : state.plan.resolution.healing?.components
         : mode?.sharedDamage?.components ?? state.plan.resolution.sharedDamage?.components;
     if (!components?.length) throw new Error("This impulse has no damage to roll.");
-    const roll = await rollImpulseDamage({ actor: source, item, components, plan: state.plan, label: kind === "healing" ? "Healing" : "Damage", countsAs: kind === "healing" ? null : state.countsAs });
+    let rollComponents = components, raw = null;
+    if (kind !== "healing" && spellLikeView(message)) {
+        const shaped = shapedComponents(message.id, components, state.plan.rank);
+        if (shaped.changed) { rollComponents = shaped.components; raw = shapedRaw(state.plan.resolution.sharedDamage?.raw, shaped, components); }
+    }
+    const roll = await rollImpulseDamage({ actor: source, item, components: rollComponents, plan: state.plan, label: kind === "healing" ? "Healing" : "Damage", countsAs: kind === "healing" ? null : state.countsAs, raw });
     if (!roll) return;
     const patch = kind === "healing" ? { healing: { json: JSON.stringify(roll.toJSON()), total: roll.total } } : { damage: { json: JSON.stringify(roll.toJSON()), total: roll.total, formula: roll.formula } };
     await requestOp("update", { messageId: message.id, patch });
@@ -371,6 +385,15 @@ async function applyCard(message, userId) {
     const state = stateOf(message);
     if (!state || state.status !== "open") return { status: "locked" };
     if (state.disrupted) return { status: "disrupted" };
+    // (A counterspell can be answered after the card posts: checked again now.)
+    const lost = state.countsAs === "spell" ? spellLost(message) : null;
+    const view = state.countsAs === "spell" ? spellLikeView(message) : null;
+    for (const target of state.targets) if (view?.targetMisses?.includes(target.actorUuid)) Object.assign(target, { excluded: true, missed: true });
+    if (lost) {
+        state.disrupted = { reason: lost.reason ?? "countered" };
+        await message.update({ [`flags.${MODULE_ID}.card`]: state });
+        return { status: "lost" };
+    }
     const sourceActor = await fromUuid(state.sourceActorUuid);
     const sourceToken = state.sourceTokenUuid ? await fromUuid(state.sourceTokenUuid).catch(() => null) : null;
     const item = await fromUuid(state.itemUuid).catch(() => null);
@@ -469,7 +492,14 @@ function cardHTML(message, state) {
     const parts = [];
     parts.push(`<p class="pf2e-kin-meta">Level ${plan.level} · class DC ${escapeHTML(state.dc ?? "?")}${plan.kineticist.overflow ? " · <strong>overflow</strong>" : ""}${plan.automation.level === "guided" ? " · <em>guided</em>" : ""}</p>`);
     if (state.countsAs) parts.push(`<p class="pf2e-kin-counts">Counts as ${state.countsAs === "strike" ? "a Strike (Strike modifiers and triggers apply; it uses this turn's multiple attack penalty" : "a spell (spell modifiers apply; it can be counterspelled and spellshaped, and spellcasting restrictions apply"}) as well as an impulse.${state.attackNumber > 1 ? ` This turn's attack number: ${state.attackNumber}.` : ""}</p>`);
-    if (state.disrupted) parts.push(`<p class="pf2e-kin-overflow">Stupefied: the flat check failed (${state.disrupted.total} vs DC ${state.disrupted.dc}). The impulse is lost.</p>`);
+    if (state.disrupted) parts.push(`<p class="pf2e-kin-overflow">${state.disrupted.reason ? `The impulse is lost: ${escapeHTML(state.disrupted.reason)}.` : `Stupefied: the flat check failed (${state.disrupted.total} vs DC ${state.disrupted.dc}). The impulse is lost.`}</p>`);
+    const spellLike = state.countsAs === "spell" ? spellLikeView(message) : null;
+    if (spellLike?.lost && !state.disrupted) parts.push(`<p class="pf2e-kin-overflow">The impulse is lost: ${escapeHTML(spellLike.lost.reason ?? "countered")}.</p>`);
+    if (spellLike) {
+        const notes = shapedComponents(message.id, [], plan.rank).notes;
+        const misses = state.targets.filter(t => spellLike.targetMisses.includes(t.actorUuid)).map(t => t.name);
+        parts.push(`<p class="pf2e-kin-counts">${spellLike.shapes.length ? `Spellshapes: ${escapeHTML(spellLike.shapes.join(", "))}.` : "No spellshape applies."}${spellLike.area ? ` Area grows to ${escapeHTML(spellLike.area.to?.value ?? spellLike.area.to ?? "")}.` : ""}${misses.length ? ` Missed by the concealed/hidden flat check (excluded on Apply): ${escapeHTML(misses.join(", "))}.` : ""}</p>${notes.length ? `<ul class="pf2e-kin-notes">${notes.map(note => `<li class="gm">${escapeHTML(note)}</li>`).join("")}</ul>` : ""}`);
+    }
     if (state.rage) parts.push(`<p class="pf2e-kin-rage">Elemental Instinct: this impulse gains the rage trait while you rage (and so does Sustaining it).</p>`);
     if (plan.targeting.area) parts.push(`<p>Area: ${areaText(plan, state)}</p>`);
     if (plan.targeting.areaChoices?.length > 1 && !locked) parts.push(`<p>${plan.targeting.areaChoices.map((area, index) => `<button type="button" data-kin="area-choice" data-index="${index}" ${state.areaChoice === index ? "class=\"active\"" : ""}>${escapeHTML(area.label ?? `${area.value}-foot ${area.type}`)}</button>`).join("")}</p>`);
