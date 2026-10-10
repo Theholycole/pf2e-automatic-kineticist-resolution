@@ -11,7 +11,7 @@ A Foundry VTT module (Foundry 14, PF2e 8.5.0) that automates the PF2e Kineticist
   - stance aura triggers (Thermal Nimbus, Drifting Pollen, Winter Sleet…) whisper the GM a card
 - **Junctions:** impulse junctions are offered on the card. Critical blast junctions are offered on an Elemental Blast critical hit.
 - **What PF2e already does stays PF2e's:** Elemental Blast's rolls, the aura Effect, stance Effects, and the resistance, aura and skill junctions.
-- **Impulses with a spell's effects** (Wall of Fire, Earthquake, Vapor Form…) go through [PF2e Automatic Spell Resolution](https://github.com/Theholycole/pf2e-automatic-resolution) when it's active.
+- **Impulses with a spell's effects** (Wall of Fire, Earthquake, Vapor Form…) go through [PF2e Automatic Spell Resolution](https://github.com/Theholycole/pf2e-automatic-spell-resolution) when it's active.
 - **Third-party:**
   - Alchemists+ Chrysopoet: Matter Blast, and Render Circle as the aura
   - Barbarians+ Elemental Instinct: the rage trait on impulses

@@ -34,7 +34,7 @@
         "id": "pf2e-automatic-resolution",
         "type": "module",
         "reason": "Impulses that have the effect of a spell (Wall of Fire, Earthquake, Vapor Form…) are resolved by the spell module when it's active.",
-        "manifest": "https://github.com/Theholycole/pf2e-automatic-resolution/releases/latest/download/module.json"
+        "manifest": "https://github.com/Theholycole/pf2e-automatic-spell-resolution/releases/latest/download/module.json"
       },
       {
         "id": "pf2e-resolution-core",
