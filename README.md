@@ -11,10 +11,20 @@ A Foundry VTT module (Foundry 14, PF2e 8.5.0) that automates the PF2e Kineticist
   - stance aura triggers (Thermal Nimbus, Drifting Pollen, Winter Sleet…) whisper the GM a card
 - **Junctions:** impulse junctions are offered on the card. Critical blast junctions are offered on an Elemental Blast critical hit.
 - **What PF2e already does stays PF2e's:** Elemental Blast's rolls, the aura Effect, stance Effects, and the resistance, aura and skill junctions.
-- **Impulses with a spell's effects** (Wall of Fire, Earthquake, Vapor Form…) go through [PF2e Automatic Spell Resolution](../PF2e%20AUTOMATIC%20SPELL%20RESOLUTION) when it's active.
+- **Impulses with a spell's effects** (Wall of Fire, Earthquake, Vapor Form…) go through [PF2e Automatic Spell Resolution](https://github.com/Theholycole/pf2e-automatic-resolution) when it's active.
 - **Third-party:**
   - Alchemists+ Chrysopoet: Matter Blast, and Render Circle as the aura
   - Barbarians+ Elemental Instinct: the rage trait on impulses
+
+## Install
+
+In Foundry go to **Add-on Modules → Install Module**, paste this manifest URL and click **Install**:
+
+```
+https://github.com/Theholycole/pf2e-automatic-kineticist-resolution/releases/latest/download/module.json
+```
+
+Foundry 14 and the PF2e system 8.5 or later. It recommends **PF2e Automatic Spell Resolution** (impulses with a spell's effects) and **PF2e Resolution Core** (impulses counting as Strikes and spells); Foundry offers both. MIT licensed (see [LICENSE](LICENSE)); the Pathfinder rules text it reads comes from the PF2e system under Paizo's ORC license.
 
 Design and decisions: [docs/design.md](docs/design.md). The plan format: [docs/plan-format.md](docs/plan-format.md).
 
