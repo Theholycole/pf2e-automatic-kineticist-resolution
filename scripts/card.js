@@ -16,6 +16,7 @@ import { applyArmor } from "./armor.js";
 import { blastFamily, renderBlast, blastOps, matterAttack } from "./blast.js";
 import { castAsSpell, spellLost, shapedComponents, shapedRaw, attackDefense, spellLikeView } from "./spell-like.js";
 
+import { noticeImmunity } from "./immunity-notice.js";
 const DEGREE_LABEL = { criticalSuccess: "Critical Success", success: "Success", failure: "Failure", criticalFailure: "Critical Failure" };
 const ATTACK_LABEL = { criticalSuccess: "Critical Hit", success: "Hit", failure: "Miss", criticalFailure: "Critical Miss" };
 
@@ -82,7 +83,7 @@ export async function openCard({ item, actor, token = null, message = null, targ
         mode: null,
         areaChoice: plan.targeting.areaChoices ? 0 : null,
         // (A creature temporarily immune to this impulse starts excluded; the GM can include it.)
-        targets: tokens.filter(t => (t.document ?? t).actor).map(targetEntry).map(entry => ({ ...entry, ally: entry.actorUuid === actor.uuid || isAlly(actor, entry), excluded: immuneTo(entry, { plan }) })),
+        targets: tokens.filter(t => (t.document ?? t).actor).map(targetEntry).map(entry => ({ ...entry, ally: entry.actorUuid === actor.uuid || isAlly(actor, entry), excluded: immuneTo(entry, { plan }, true) })),
         answers: {},
         damage: null,
         healing: null,
@@ -456,13 +457,17 @@ async function applyCard(message, userId) {
 
 function healingRecipients(state, sourceActor) {
     const recipients = state.targets.filter(t => !t.excluded).map(t => ({ ...t, immune: immuneTo(t, state) }));
+    for (const target of recipients.filter(t => t.immune)) noticeImmunity({ actor: fromUuidSync(target.actorUuid), target: target.name, blocked: state.plan.source.name, why: "temporarily immune to this impulse" });
     if (!recipients.length && sourceActor) return [{ id: "source", name: sourceActor.name }];
     return recipients;
 }
 
-function immuneTo(target, state) {
+function immuneTo(target, state, notice = false) {
     const actor = fromUuidSync(target.actorUuid);
-    return Boolean(actor?.itemTypes?.effect?.some(effect => effect.flags?.[MODULE_ID]?.immunity?.source === state.plan.source.slug));
+    const immune = Boolean(actor?.itemTypes?.effect?.some(effect => effect.flags?.[MODULE_ID]?.immunity?.source === state.plan.source.slug));
+    // (2026-11-11: left out of a new card for it — the GM told.)
+    if (immune && notice) noticeImmunity({ actor, target: target.name, blocked: state.plan.source.name, why: "temporarily immune to this impulse; left out (the GM can include it)" });
+    return immune;
 }
 
 // ---------------------------------------------------------------- rendering
