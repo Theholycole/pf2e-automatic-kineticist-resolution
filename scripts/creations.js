@@ -8,6 +8,7 @@ import { MODULE_ID, escapeHTML, notifyError, tokenOf, isActiveGM, DamageRollClas
 import { requestOp, stateOf } from "./card.js";
 import { createEffect, applyHealing } from "./apply.js";
 
+import { noticeImmunity } from "./immunity-notice.js";
 const FOLDER = "Kineticist creations";
 const SIZES = { tiny: "tiny", sm: "sm", med: "med", lg: "lg", huge: "huge", grg: "grg" };
 const SQUARES = { tiny: 0.5, sm: 1, med: 1, lg: 2, huge: 3, grg: 4 };
@@ -181,6 +182,7 @@ export async function eat(messageId, eaterUuid) {
     const data = message?.flags?.[MODULE_ID]?.food;
     const eater = await fromUuid(eaterUuid);
     if (!data || data.eaten || !eater) return;
+    if (eater.itemTypes?.effect?.some(effect => effect.flags?.[MODULE_ID]?.immunity?.source === data.slug)) noticeImmunity({ actor: eater, blocked: data.name, why: "full (temporarily immune)" });
     if (eater.itemTypes?.effect?.some(effect => effect.flags?.[MODULE_ID]?.immunity?.source === data.slug)) return ui.notifications.warn(`${eater.name} is full (temporarily immune).`);
     const roll = await new (DamageRollClass())(componentsFormula(data.components)).evaluate();
     await roll.toMessage({ speaker: ChatMessage.getSpeaker({ actor: eater }), flavor: `${escapeHTML(data.name)}: healing` });

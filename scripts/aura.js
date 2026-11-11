@@ -9,6 +9,7 @@ import { resolveAuraTrigger } from "../src/core/resolve.js";
 import { applyChanges, createEffect } from "./apply.js";
 import { trackersOf } from "./tracker.js";
 
+import { noticeImmunity } from "./immunity-notice.js";
 // (Alchemists+ Chrysopoet: a rendered transmutation circle is "the area of your kinetic aura" and ends when an overflow impulse is used.)
 export const isKineticAura = item => item?.type === "effect" && (item.slug === "effect-kinetic-aura" || item.name === "Effect: Kinetic Aura" || item.sourceId === KINETIC_AURA_UUID
     || item._stats?.compendiumSource === KINETIC_AURA_UUID || item.name === "Effect: Render Circle" || item.slug === "effect-render-circle");
@@ -131,7 +132,10 @@ async function triggerCard(holder, trigger, token, why) {
     }
     if (token && trigger.skipIfAffected && token.actor?.itemTypes?.effect?.some(effect => effect.flags?.[MODULE_ID]?.trigger === holder.effect.id)) return;
     // (Safe Elements: creatures the kineticist designated as immune to the aura's damage and drawbacks.)
-    if (token && (trigger.damage || trigger.save || trigger.effect) && (holder.actor.flags?.[MODULE_ID]?.safeElements?.damage ?? []).includes(token.actor?.uuid)) return;
+    if (token && (trigger.damage || trigger.save || trigger.effect) && (holder.actor.flags?.[MODULE_ID]?.safeElements?.damage ?? []).includes(token.actor?.uuid)) {
+        noticeImmunity({ actor: token.actor, token, blocked: holder.effect.name.replace(/^Stance: /, ""), why: `immune to its damage and drawbacks (${holder.actor.name}'s Safe Elements)`, ...(round ? { once: `${holder.effect.id}:${token.id}:${round}` } : {}) });
+        return;
+    }
     const name = holder.effect.name.replace(/^Stance: /, "");
     const formula = trigger.damage ? componentsFormula(trigger.damage.map(component => ({ ...component, type: component.type ?? holder.actor.flags?.system?.kineticist?.thermalNimbus ?? "fire" }))) : null;
     const save = trigger.save ? `${trigger.save.basic ? "basic " : ""}${trigger.save.statistic}` : null;
